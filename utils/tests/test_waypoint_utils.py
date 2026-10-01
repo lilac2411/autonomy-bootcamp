@@ -24,14 +24,16 @@ Graded by ``warg run utils grade-tests``: pass on the real code, 90% branch
 coverage, and fail on every broken copy in ``grader/mutants/``.
 """
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
+from src.types import Coordinate
 from src.waypoint_utils import (
     east_north_coordinate_offset_m,
     parse_waypoints_file,
     sort_clockwise_sweep,
 )
-from src.types import Coordinate
 
 # The helper and the test below are given to you.
 
@@ -87,10 +89,184 @@ def test_parse_waypoints_file_success(tmp_path, text, expected):
     path = write_to_tmp_waypoints_file(tmp_path, text)
     assert parse_waypoints_file(path) == expected
 
+def test_parse_waypoints_file_empty(tmp_path):
+    path = write_to_tmp_waypoints_file(tmp_path, "")
+    assert parse_waypoints_file(path) == (None, [])
+    
+def test_parse_waypoints_file_missing_lat(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints:
+          - {lon: 1, alt: 1}
+        """,
+    )
+    with pytest.raises(ValueError):
+      parse_waypoints_file(path)
 
-def test_placeholder():
-    # TODO(bootcamper): delete this and write real tests. It's only here so
-    # linter doesn't complain about unused imports before you start.
-    assert callable(east_north_coordinate_offset_m)
-    assert callable(parse_waypoints_file)
-    assert callable(sort_clockwise_sweep)
+def test_parse_waypoints_file_missing_alt(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints:
+          - {lat: 1, lon: 1}
+        """,
+    )
+    with pytest.raises(ValueError):
+      parse_waypoints_file(path)
+
+def test_parse_waypoints_file_missing_lon(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints:
+          - {lat: 1, alt: 1}
+        """,
+    )
+    with pytest.raises(ValueError):
+      parse_waypoints_file(path)
+
+def test_parse_waypoints_file_range1(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints:
+          - {lat: 91, lon: 180, alt: 10}
+        """,
+    )
+    with pytest.raises(ValueError):
+        parse_waypoints_file(path)
+
+def test_parse_waypoints_file_range2(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints:
+          - {lat: 90, lon: 181, alt: 10}
+        """,
+    )
+    with pytest.raises(ValueError):
+        parse_waypoints_file(path)
+
+def test_parse_waypoints_file_invalid_yaml(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints:
+          - {lat: 1, lon: 2, alt: 3
+        """,
+    )
+
+    with pytest.raises(ValueError):
+        parse_waypoints_file(path)
+
+def test_parse_waypoints_file_empty_waylist(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints: []
+        """,
+    )
+
+    assert parse_waypoints_file(path) == (None, [])
+
+def test_parse_waypoints_file_range3(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints:
+          - {lat: a, lon: 10, alt: c}
+        """,
+    )
+
+    with pytest.raises(ValueError):
+        parse_waypoints_file(path)
+
+def test_parse_waypoints_file_mapping(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+          - lat: 1, lon: 2, alt: 3
+        """,
+    )
+
+    with pytest.raises(ValueError):
+        parse_waypoints_file(path)
+  
+def test_sort_clockwise_sweep_one_waypoint():
+    waypoint = Coordinate(43, -80, 15)
+
+    assert sort_clockwise_sweep([waypoint]) == [waypoint]
+
+def test_sort_clockwise_sweep_no_waypoints():
+    assert sort_clockwise_sweep([]) == []
+
+def test_east_north_coordinate_offset_m_east():
+    east, north = east_north_coordinate_offset_m(
+        10.0, -80.0,
+        10.0, -79.0,
+    )
+
+    assert east == pytest.approx(109506, abs =1)
+    assert north == pytest.approx(0)
+    
+def test_east_north_coordinate_offset_m_north():
+    east, north = east_north_coordinate_offset_m(
+        10.0, -80.0,
+        11.0, -80.0,
+    )
+
+    assert east == pytest.approx(0)
+    assert north == pytest.approx(111195, abs=1)
+
+def test_parse_waypoints_file_coordinate_is_frozen(tmp_path):
+    path = write_to_tmp_waypoints_file(
+        tmp_path,
+        """
+        waypoints:
+          - {lat: 1, lon: 2, alt: 3}
+        """,
+    )
+
+    _, waypoints = parse_waypoints_file(path)
+
+    with pytest.raises(FrozenInstanceError):
+        waypoints[0].lat = 5
+
+def test_sort_clockwise_sweep_no_home():
+    north = Coordinate(3, -1, 10)
+    east = Coordinate(2, 0, 10)
+    south = Coordinate(1, -1, 10)
+    west = Coordinate(2, -2, 10)
+
+    waypoints = [west, south, north, east]
+
+    assert sort_clockwise_sweep(waypoints) == [north, east, south, west]
+
+def test_sort_clockwise_sweep_no_home2():
+    a = Coordinate(2, 10, 10)
+    b = Coordinate(2, 0, 10)
+    c = Coordinate(2, -1, 10)
+
+    waypoints = [c, b, a]
+
+    assert sort_clockwise_sweep(waypoints) == [a, b, c]
+
+
+def test_parse_waypoints_file_missing_file(tmp_path):
+    path = tmp_path / "dfgxsrth.yaml"
+
+    with pytest.raises(OSError):
+        parse_waypoints_file(path)
+
+def test_sort_clockwise_sweep_home2():
+    home = Coordinate(2, 1, 10)
+    north = Coordinate(3, -1, 10)
+    east = Coordinate(2, 0, 10)
+    south = Coordinate(1, -1, 10)
+    west = Coordinate(2, -2, 10)
+
+    waypoints = [west, south, north, east]
+
+    assert sort_clockwise_sweep(waypoints, home) == [east, south, west, north]
+
